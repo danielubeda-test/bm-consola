@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>BM · Consola</title>
+<style>
+:root{--azul:#1f3864;--gris:#f3f4f6;--borde:#e5e7eb;--txt:#1f2937;--suave:#6b7280;--fondo:#fff}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,Segoe UI,Arial,sans-serif;color:var(--txt);background:var(--fondo);font-size:14px}
+a{color:var(--azul)}header{background:var(--azul);color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:2}
+header a{color:#fff;text-decoration:none;font-weight:600}header button{background:transparent;border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;margin-left:10px}
+#menuBtn{display:none}
+.wrap{display:flex;min-height:calc(100vh - 46px)}nav{width:250px;flex:none;background:var(--gris);padding:12px;border-right:1px solid var(--borde);overflow-y:auto;max-height:calc(100vh - 46px);position:sticky;top:46px}
+nav h4{margin:14px 0 4px;font-size:11px;text-transform:uppercase;color:var(--suave);letter-spacing:.04em}nav a{display:block;padding:3px 6px;border-radius:4px;text-decoration:none;font-size:13px}
+nav a:hover,nav a.act{background:#e2e8f0}nav a.w::after{content:" ✎";color:var(--suave)}main{flex:1;padding:16px 24px;min-width:0}
+h1{font-size:20px;margin:4px 0 6px}h3{margin:18px 0 6px}p.d{color:var(--suave);max-width:900px;line-height:1.45}
+table{border-collapse:collapse;margin:6px 0 12px;font-size:13px}td,th{border:1px solid var(--borde);padding:4px 8px;vertical-align:top;text-align:left}th{background:var(--gris);font-weight:600}
+td.n{text-align:right;white-space:nowrap}.kv>tbody>tr>th{width:220px}.res{margin-top:16px;overflow-x:auto}
+form.f{display:grid;grid-template-columns:230px minmax(0,560px);gap:8px 12px;align-items:start;margin:12px 0}form.f label{font-weight:600;padding-top:6px}
+form.f small{display:block;color:var(--suave);font-weight:400;margin-top:2px}input,select,textarea{font:inherit;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;width:100%;background:#fff;color:var(--txt)}
+textarea{min-height:110px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+button.p{background:var(--azul);color:#fff;border:0;border-radius:6px;padding:8px 18px;font-size:14px;cursor:pointer}button.s{background:#fff;color:var(--azul);border:1px solid var(--azul);border-radius:6px;padding:8px 18px;font-size:14px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+.ok{background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:8px;margin:8px 0}.err{background:#fef2f2;border:1px solid #fecaca;padding:10px 12px;border-radius:8px;color:#991b1b;margin:8px 0}
+.av{background:#fffbeb;border:1px solid #fde68a;padding:10px 12px;border-radius:8px;margin:8px 0}.chip{display:inline-block;background:var(--gris);border-radius:10px;padding:1px 8px;font-size:12px;color:var(--suave)}
+.caja{max-width:400px;margin:60px auto;padding:24px;border:1px solid var(--borde);border-radius:12px}.caja input{margin:6px 0 12px}
+@media (max-width:800px){#menuBtn{display:inline-block}.wrap{display:block}nav{display:none;width:auto;position:static;max-height:none}nav.abierto{display:block}form.f{grid-template-columns:1fr}main{padding:12px 16px}}
+</style>
+</head>
+<body>
+<div id="app"><div class="caja">Cargando…</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+"use strict";
+const API = "https://fyrqbybupzbmadsdmwtf.supabase.co/functions/v1/bm-mcp/api";
+const $app = document.getElementById("app");
+let token = leer("bm_token"), yo = null, grupos = [], herramientas = [];
+
+function leer(k) { try { return sessionStorage.getItem(k) || ""; } catch (e) { return ""; } }
+function guardar(k, v) { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k); } catch (e) {} }
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const etiqueta = (k) => { const s = String(k).replace(/_/g, " "); return s.charAt(0).toUpperCase() + s.slice(1); };
+const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
+
+async function llamar(ruta, opciones = {}) {
+  const h = opciones.headers || {};
+  if (token) h["Authorization"] = "Bearer " + token;
+  if (opciones.json !== undefined) { h["Content-Type"] = "application/json"; opciones.body = JSON.stringify(opciones.json); }
+  const r = await fetch(API + ruta, { method: opciones.method || (opciones.body ? "POST" : "GET"), headers: h, body: opciones.body });
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (r.status === 401 && token && !ruta.startsWith("/login")) { salirLocal("La sesión ha caducado: vuelve a entrar"); throw new Error("Sesión caducada"); }
+  if (!r.ok) throw new Error(j.error || ("Error " + r.status));
+  return j;
+}
+const herr = (n) => herramientas.find((t) => t.name === n);
+async function ejecutar(n, args) { return (await llamar("/h/" + n, { json: { args } })).r; }
+
+// ---------------------------------------------------------------- vista genérica de resultados
+function vista(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Sí" : "No";
+  if (typeof v === "number") return esc(nf.format(v));
+  if (typeof v === "string") {
+    if (/^https?:\/\/\S+$/.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener noreferrer">${esc(v.length > 70 ? v.slice(0, 67) + "…" : v)}</a>`;
+    if (/^-?\d+(\.\d+)?$/.test(v) && v.length < 16) return esc(nf.format(Number(v)));
+    return esc(v);
+  }
+  if (Array.isArray(v)) {
+    if (!v.length) return '<span class="chip">ninguno</span>';
+    if (v.every((x) => x === null || typeof x !== "object")) return v.map(vista).join(" · ");
+    if (v.every((x) => x && typeof x === "object" && !Array.isArray(x))) {
+      const cols = []; v.forEach((x) => Object.keys(x).forEach((k) => { if (!cols.includes(k)) cols.push(k); }));
+      return `<table><thead><tr>${cols.map((c) => `<th>${esc(etiqueta(c))}</th>`).join("")}</tr></thead><tbody>${v.map((x) =>
+        `<tr>${cols.map((c) => { const y = x[c]; const num = typeof y === "number" || (typeof y === "string" && /^-?\d+(\.\d+)?$/.test(y));
+          return `<td${num ? ' class="n"' : ""}>${vista(y)}</td>`; }).join("")}</tr>`).join("")}</tbody></table>`;
+    }
+    return `<ul>${v.map((x) => `<li>${vista(x)}</li>`).join("")}</ul>`;
+  }
+  const ks = Object.keys(v); if (!ks.length) return "—";
+  return `<table class="kv"><tbody>${ks.map((k) => `<tr><th>${esc(etiqueta(k))}</th><td>${vista(v[k])}</td></tr>`).join("")}</tbody></table>`;
+}
+function resultado(r) {
+  if (r && typeof r === "object" && !Array.isArray(r)) {
+    const o = Object.assign({}, r); let cab = "";
+    for (const k of ["resultado", "nota", "aviso", "siguiente"]) if (typeof o[k] === "string" && o[k]) { cab += `<div class="${k === "aviso" ? "av" : "ok"}">${esc(o[k])}</div>`; delete o[k]; }
+    return `<div class="res">${cab}${vista(o)}</div>`;
+  }
+  return `<div class="res">${vista(r)}</div>`;
+}
+const error = (e) => `<div class="err">${esc(e && e.message ? e.message : e)}</div>`;
+
+// ---------------------------------------------------------------- acceso
+function pantallaLogin(msg = "") {
+  $app.innerHTML = `<div class="caja"><h1>BM · Consola</h1>${msg ? error(msg) : ""}
+    <form id="fl"><label>Email<input type="email" name="email" required autocomplete="username"></label>
+    <label>Contraseña<input type="password" name="clave" required autocomplete="current-password"></label>
+    <button class="p" type="submit">Entrar</button></form>
+    <p class="d">Acceso restringido. Si no tienes contraseña o la has olvidado, pide un enlace al administrador.</p></div>`;
+  document.getElementById("fl").onsubmit = async (ev) => {
+    ev.preventDefault(); const f = new FormData(ev.target); const b = ev.target.querySelector("button"); b.disabled = true;
+    try { const r = await llamar("/login", { json: { email: f.get("email"), clave: f.get("clave") } }); token = r.token; guardar("bm_token", token); await arrancar(); }
+    catch (e) { pantallaLogin(e.message); }
+  };
+}
+function salirLocal(msg) { token = ""; guardar("bm_token", ""); yo = null; pantallaLogin(msg); }
+async function salir() { try { await llamar("/logout", { method: "POST" }); } catch (e) {} salirLocal(); }
+
+async function pantallaAlta(cod) {
+  let info; try { info = await llamar("/alta/" + cod); } catch (e) { $app.innerHTML = `<div class="caja"><h1>Enlace no válido</h1>${error(e)}</div>`; return; }
+  const pinta = (msg = "") => {
+    $app.innerHTML = `<div class="caja"><h1>${info.restablecer ? "Nueva contraseña" : "Crea tu contraseña"}</h1><p>${esc(info.nombre)} · ${esc(info.email)}</p>${msg}
+      <form id="fa"><label>Contraseña (12 caracteres o más, con letras y números)<input type="password" name="c1" required autocomplete="new-password"></label>
+      <label>Repítela<input type="password" name="c2" required autocomplete="new-password"></label><button class="p" type="submit">Guardar</button></form></div>`;
+    document.getElementById("fa").onsubmit = async (ev) => {
+      ev.preventDefault(); const f = new FormData(ev.target);
+      if (f.get("c1") !== f.get("c2")) return pinta(error("Las contraseñas no coinciden"));
+      try { await llamar("/alta/" + cod, { json: { clave: f.get("c1") } });
+        history.replaceState(null, "", location.pathname);
+        $app.innerHTML = `<div class="caja"><h1>Contraseña guardada</h1><div class="ok">Ya puedes entrar.</div><p><a href="${esc(location.pathname)}">Ir a la consola</a></p></div>`;
+      } catch (e) { pinta(error(e)); }
+    };
+  };
+  pinta();
+}
+
+async function pantallaSubir(cod) {
+  let info; try { info = await llamar("/subir/" + cod); } catch (e) { $app.innerHTML = `<div class="caja"><h1>Enlace no válido</h1>${error(e)}</div>`; return; }
+  $app.innerHTML = `<div class="caja"><h1>Subir ${esc(info.tipo)}</h1><div class="av"><b>${esc(info.descripcion || info.tipo)}</b><br>${esc(info.cuenta || "")} · ${esc(info.nombre_cuenta || "")}</div>
+    <form id="fs"><input type="file" name="fichero" accept="image/*,application/pdf" required><p><button class="p" type="submit">Subir</button></p></form>
+    <p class="d">Foto o PDF, máximo 10 MB. Enlace de un solo uso.</p><div id="rs"></div></div>`;
+  document.getElementById("fs").onsubmit = async (ev) => {
+    ev.preventDefault(); const b = ev.target.querySelector("button"); b.disabled = true;
+    try { await llamar("/subir/" + cod, { body: new FormData(ev.target) }); ev.target.remove(); document.getElementById("rs").innerHTML = `<div class="ok">Documento archivado. Ya puedes cerrar esta página.</div>`; }
+    catch (e) { b.disabled = false; document.getElementById("rs").innerHTML = error(e); }
+  };
+}
+
+// ---------------------------------------------------------------- marco de la aplicación
+function marco(cuerpo) {
+  const actual = location.hash.replace(/^#/, "");
+  let nav = `<h4>Atajos</h4><a href="#"${actual === "" ? ' class="act"' : ""}>Inicio</a><a href="#carga"${actual === "carga" ? ' class="act"' : ""}>Carga masiva (Excel)</a><a href="#extracto"${actual === "extracto" ? ' class="act"' : ""}>Extracto bancario</a>`;
+  const usados = new Set();
+  for (const [g, ns] of grupos) {
+    const ts = ns.map(herr).filter(Boolean); if (!ts.length) continue;
+    nav += `<h4>${esc(g)}</h4>` + ts.map((t) => { usados.add(t.name); return `<a href="#h=${t.name}" class="${t.write ? "w" : ""}${actual === "h=" + t.name ? " act" : ""}">${esc(etiqueta(t.name))}</a>`; }).join("");
+  }
+  const otras = herramientas.filter((t) => !usados.has(t.name));
+  if (otras.length) nav += `<h4>Otras</h4>` + otras.map((t) => `<a href="#h=${t.name}" class="${t.write ? "w" : ""}">${esc(etiqueta(t.name))}</a>`).join("");
+  $app.innerHTML = `<header><span><button id="menuBtn" type="button">☰</button> <a href="#">BM · Consola</a></span><span>${esc(yo && yo.nombre || "")}${yo && yo.rol ? " · " + esc(yo.rol) : ""}<button id="salir" type="button">Salir</button></span></header>
+    <div class="wrap"><nav id="nav">${nav}</nav><main id="main">${cuerpo}</main></div>`;
+  document.getElementById("salir").onclick = salir;
+  document.getElementById("menuBtn").onclick = () => document.getElementById("nav").classList.toggle("abierto");
+  return document.getElementById("main");
+}
+
+async function inicio() {
+  const m = marco(`<h1>Hola, ${esc(yo.nombre || "")}</h1><p class="d">Cada opción del menú es una herramienta de BM con los mismos permisos que en Claude. Las marcadas con ✎ escriben: se validan o se confirman antes de guardar. Lo que hagas aquí queda en el registro de actividad como hecho desde la consola.</p>
+    <h3>Pendiente</h3><div id="al">Cargando…</div><h3>Cierre de hoy</h3><div id="ch">Cargando…</div>`);
+  ejecutar("mis_alertas", {}).then((r) => { m.querySelector("#al").innerHTML = resultado(r); }).catch((e) => { m.querySelector("#al").innerHTML = error(e); });
+  ejecutar("cierre_hoy", {}).then((r) => { m.querySelector("#ch").innerHTML = resultado(r); }).catch((e) => { m.querySelector("#ch").innerHTML = error(e); });
+}
+
+// ---------------------------------------------------------------- formulario de cada herramienta
+function campo(p, val) {
+  const v = val === undefined || val === null ? "" : (typeof val === "object" ? JSON.stringify(val, null, 1) : String(val));
+  const req = p.required ? " required" : ""; let input;
+  if (p.type === "boolean") input = `<select name="${p.name}"><option value="">—</option><option value="true"${v === "true" ? " selected" : ""}>Sí</option><option value="false"${v === "false" ? " selected" : ""}>No</option></select>`;
+  else if (p.pg === "jsonb") input = `<textarea name="${p.name}"${req} placeholder="${p.type === "array" ? "[ ]" : "{ }"}">${esc(v)}</textarea>`;
+  else if (p.pg === "date") input = `<input type="date" name="${p.name}" value="${esc(v)}"${req}>`;
+  else if (p.type === "number" || p.type === "integer") input = `<input type="number" step="${p.type === "integer" ? "1" : "any"}" name="${p.name}" value="${esc(v)}"${req}>`;
+  else input = `<input type="text" name="${p.name}" value="${esc(v)}"${req}>`;
+  return `<label>${esc(etiqueta(p.name))}${p.required ? " *" : ""}<small>${esc(p.description)}</small></label><div>${input}</div>`;
+}
+function argsDe(t, f) {
+  const a = {};
+  for (const p of t.params) {
+    const raw = f.get(p.name); if (raw === null || String(raw).trim() === "") continue; const s = String(raw).trim();
+    if (p.type === "boolean") a[p.name] = s === "true";
+    else if (p.pg === "jsonb") { try { a[p.name] = JSON.parse(s); } catch (e) { throw new Error(`«${etiqueta(p.name)}» no es JSON válido`); } }
+    else if (p.type === "number") a[p.name] = Number(s.replace(",", "."));
+    else if (p.type === "integer") a[p.name] = parseInt(s, 10);
+    else a[p.name] = s;
+  }
+  return a;
+}
+async function pantallaHerramienta(n) {
+  const t = herr(n); if (!t) return inicio();
+  const conValidar = t.params.some((p) => p.name === "validar");
+  const visibles = t.params.filter((p) => !(conValidar && p.name === "validar"));
+  const m = marco(`<h1>${esc(etiqueta(t.name))} ${t.write ? '<span class="chip">escribe</span>' : ""}</h1><p class="d">${esc(t.description)}</p>
+    ${visibles.length || t.write ? `<form class="f" id="ft">${visibles.map((p) => campo(p)).join("")}<span></span><div><button class="p" type="submit">${t.write ? (conValidar ? "Validar (sin guardar)" : "Continuar") : "Consultar"}</button></div></form>` : ""}
+    <div id="sal"></div>`);
+  const sal = m.querySelector("#sal");
+  const ocupado = (x) => m.querySelectorAll("button").forEach((b) => (b.disabled = x));
+  const correr = async (args) => { ocupado(true); try { return await ejecutar(t.name, args); } finally { ocupado(false); } };
+  if (!t.write && !t.params.some((p) => p.required)) { sal.innerHTML = "Cargando…"; correr({}).then((r) => (sal.innerHTML = resultado(r))).catch((e) => (sal.innerHTML = error(e))); }
+  const ft = m.querySelector("#ft"); if (!ft) return;
+  ft.onsubmit = async (ev) => {
+    ev.preventDefault(); let args;
+    try { args = argsDe(t, new FormData(ft)); } catch (e) { sal.innerHTML = error(e); return; }
+    sal.innerHTML = "Trabajando…";
+    try {
+      if (!t.write) { sal.innerHTML = resultado(await correr(args)); return; }
+      if (conValidar) {
+        const r = await correr(Object.assign({}, args, { validar: true }));
+        sal.innerHTML = resultado(r) + `<p><button class="p" id="go" type="button">Cargar de verdad</button></p>`;
+      } else {
+        sal.innerHTML = `<div class="av">Vas a ejecutar <b>${esc(etiqueta(t.name))}</b> con estos datos. Revísalos y confirma.</div>${vista(args)}<p><button class="p" id="go" type="button">Confirmar</button></p>`;
+      }
+      sal.querySelector("#go").onclick = async () => {
+        try { const r = await correr(conValidar ? Object.assign({}, args, { validar: false }) : args); sal.innerHTML = resultado(r); }
+        catch (e) { sal.innerHTML = error(e); }
+      };
+    } catch (e) { sal.innerHTML = error(e); }
+  };
+}
+
+// ---------------------------------------------------------------- Excel (SheetJS)
+async function hojas(fichero) {
+  const wb = XLSX.read(new Uint8Array(await fichero.arrayBuffer()), { type: "array", cellDates: true });
+  return wb.SheetNames.map((n) => ({ nombre: n, filas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: false })
+    .map((f) => f.map((c) => c instanceof Date ? new Date(c.getTime() - c.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : c)) }));
+}
+const limpiaCab = (s) => String(s ?? "").replace(/\s*\*\s*$/, "").trim();
+function objetos(filas) {
+  const cab = (filas[0] || []).map(limpiaCab);
+  return filas.slice(1).map((f) => { const o = {}; cab.forEach((c, i) => { if (c && f[i] !== null && f[i] !== undefined && String(f[i]).trim() !== "") o[c] = f[i]; }); return o; })
+    .filter((o) => Object.keys(o).length);
+}
+
+async function pantallaCarga() {
+  const m = marco(`<h1>Carga masiva desde Excel</h1>
+    <p class="d">Una hoja por bloque (personas, clientes, proveedores, recurrentes, proyectos, tarifas, hitos, forecast, propuestas, facturas_pendientes, facturas_proveedor), con la primera fila de cabeceras. Primero se valida todo sin guardar; si no hay errores, se carga bloque a bloque y en orden, y cada bloque es todo o nada.</p>
+    <p><button class="s" id="pl" type="button">Descargar la plantilla de carga</button></p>
+    <form class="f" id="fc"><label>Excel</label><div><input type="file" name="fichero" accept=".xlsx,.xls" required></div><span></span><div><button class="p" type="submit">Validar (sin guardar)</button></div></form><div id="sal"></div>`);
+  const sal = m.querySelector("#sal");
+  m.querySelector("#pl").onclick = async () => {
+    try {
+      const p = await ejecutar("plantilla_carga", {}); const wb = XLSX.utils.book_new();
+      const ins = [["Plantilla de carga de BM"], [String(p.como || "")], []];
+      Object.entries(p.listas || {}).forEach(([k, v]) => ins.push([etiqueta(k), (v || []).join(" | ")]));
+      ins.push([], ["Columnas con indicaciones"]);
+      const bloques = (p.bloques || []).slice().sort((a, b) => a.orden - b.orden);
+      bloques.forEach((b) => (b.columnas || []).forEach((c) => { const n = [c.ej, c.tipo, c.lista ? "lista: " + c.lista : null].filter(Boolean).join(" · "); if (n) ins.push([`${b.tipo} · ${c.c}`, n]); }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ins), "Instrucciones");
+      bloques.forEach((b) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([(b.columnas || []).map((c) => typeof c === "string" ? c : c.c + (c.obl ? " *" : ""))]), String(b.tipo).slice(0, 31)));
+      XLSX.writeFile(wb, "BM_plantilla_carga.xlsx");
+    } catch (e) { sal.innerHTML = error(e); }
+  };
+  m.querySelector("#fc").onsubmit = async (ev) => {
+    ev.preventDefault(); sal.innerHTML = "Validando…";
+    try {
+      const p = await ejecutar("plantilla_carga", {});
+      const orden = new Map((p.bloques || []).map((b) => [b.tipo, b.orden]));
+      const bloques = (await hojas(new FormData(ev.target).get("fichero")))
+        .filter((h) => orden.has(h.nombre.trim().toLowerCase())).map((h) => ({ tipo: h.nombre.trim().toLowerCase(), filas: objetos(h.filas) }))
+        .filter((b) => b.filas.length).sort((a, b) => orden.get(a.tipo) - orden.get(b.tipo));
+      if (!bloques.length) throw new Error("El Excel no tiene hojas con nombre de bloque (personas, clientes, proyectos…) o están vacías. Descarga la plantilla.");
+      let html = "", ok = true;
+      for (const b of bloques) {
+        try { const r = await ejecutar("carga", { tipo: b.tipo, filas: b.filas, validar: true }); if (Array.isArray(r && r.errores) && r.errores.length) ok = false;
+          html += `<h3>${esc(etiqueta(b.tipo))} · ${b.filas.length} filas</h3>${resultado(r)}`; }
+        catch (e) { ok = false; html += `<h3>${esc(etiqueta(b.tipo))}</h3>${error(e)}`; }
+      }
+      sal.innerHTML = (ok ? `<div class="ok">Validado sin errores y sin guardar nada.</div><p><button class="p" id="go" type="button">Cargar de verdad (${bloques.length} bloques, en orden)</button></p>`
+        : `<div class="err">Hay errores: corrige el Excel y vuelve a subirlo. No se ha guardado nada.</div>`) + html;
+      const go = sal.querySelector("#go"); if (go) go.onclick = async () => {
+        go.disabled = true; let out = "";
+        for (const b of bloques) {
+          try { out += `<h3>${esc(etiqueta(b.tipo))}</h3>${resultado(await ejecutar("carga", { tipo: b.tipo, filas: b.filas, validar: false }))}`; }
+          catch (e) { out += `<h3>${esc(etiqueta(b.tipo))}</h3>${error(e)}<div class="av">Se para aquí: los bloques anteriores sí se cargaron.</div>`; break; }
+        }
+        sal.innerHTML = out;
+      };
+    } catch (e) { sal.innerHTML = error(e); }
+  };
+}
+
+// ---------------------------------------------------------------- extracto bancario
+const numES = (v) => { if (v === null || v === undefined || v === "") return null; if (typeof v === "number") return v;
+  let s = String(v).replace(/[€\s]/g, ""); if (/,\d{1,2}$/.test(s)) s = s.replace(/\./g, "").replace(",", "."); const n = Number(s); return isNaN(n) ? null : n; };
+const fechaES = (v) => { if (!v) return null; const s = String(v).trim(); let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/); if (m) return `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; return null; };
+const nrm = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+function filasBanco(filas) {
+  const ci = filas.findIndex((f) => f.some((c) => nrm(c) === "concepto" || nrm(c) === "movimiento") && f.some((c) => nrm(c).startsWith("f")));
+  if (ci < 0) throw new Error("No encuentro la fila de cabeceras (Fecha, Concepto, Importe…) en el Excel");
+  const cab = filas[ci].map(nrm); const idx = (...ps) => cab.findIndex((c) => ps.some((p) => c === p || c.startsWith(p)));
+  const iF = idx("fecha operacion", "f.operacion", "f. operativa", "fecha", "f.valor", "f. valor"), iC = idx("concepto"), iM = idx("movimiento", "mas datos");
+  const iI = idx("importe"), iIng = idx("ingreso"), iGas = idx("gasto"), iS = idx("saldo", "disponible");
+  if (iF < 0 || (iC < 0 && iM < 0) || (iI < 0 && iIng < 0)) throw new Error("Faltan columnas: necesito fecha, concepto e importe (o ingreso y gasto)");
+  return filas.slice(ci + 1).map((f) => ({ fecha: fechaES(f[iF]), concepto: [iC >= 0 ? f[iC] : null, iM >= 0 ? f[iM] : null].filter(Boolean).join(" "),
+    importe: iI >= 0 ? numES(f[iI]) : (numES(f[iIng]) || 0) - (numES(f[iGas]) || 0), saldo: iS >= 0 ? numES(f[iS]) : null }))
+    .filter((r) => r.fecha && r.importe !== null && r.importe !== 0);
+}
+async function pantallaExtracto() {
+  const m = marco(`<h1>Extracto bancario</h1>
+    <p class="d">Sube el fichero Norma 43 del banco (.txt, .n43) o el Excel de movimientos de Santander, BBVA, CaixaBank o Sabadell. BM casa cada movimiento con facturas pendientes, pagos a proveedores y reembolsos sin guardar nada; después confirmas y registra cobros, pagos, reembolsos y el saldo final. No duplica movimientos ya cargados.</p>
+    <form class="f" id="fe"><label>Banco y cuenta<small>Usa siempre el mismo nombre para la misma cuenta</small></label><div><input type="text" name="banco" required placeholder="Santander 4567"></div>
+    <label>Fichero</label><div><input type="file" name="fichero" required accept=".txt,.n43,.aeb,.xlsx,.xls"></div><span></span><div><button class="p" type="submit">Revisar (sin guardar)</button></div></form><div id="sal"></div>`);
+  const sal = m.querySelector("#sal");
+  m.querySelector("#fe").onsubmit = async (ev) => {
+    ev.preventDefault(); sal.innerHTML = "Revisando…";
+    try {
+      const f = new FormData(ev.target); const banco = String(f.get("banco")).trim(); const fich = f.get("fichero"); let args;
+      if (/\.xlsx?$/i.test(fich.name)) args = { banco, formato: "filas", filas: filasBanco((await hojas(fich))[0].filas) };
+      else args = { banco, formato: "n43", contenido: new TextDecoder("latin1").decode(await fich.arrayBuffer()) };
+      const r = await ejecutar("cargar_extracto", Object.assign({}, args, { validar: true }));
+      const rev = r.para_revisar || [];
+      sal.innerHTML = resultado({ resumen: r.resumen, saldo_final: r.saldo_final, desde: r.desde, hasta: r.hasta, cuadre_n43: r.cuadre_n43, nota: r.nota })
+        + `<h3>Movimientos</h3>${vista((r.movimientos || []).map((x) => ({ n: x.n, fecha: x.fecha, concepto: x.concepto, importe: x.importe, estado: x.estado, tipo: x.tipo, casa_con: x.factura ?? x.gasto ?? x.persona ?? null, nota: x.nota ?? null })))}`
+        + (rev.length ? `<div class="av">Resuelve lo dudoso o sin casar (opcional): número de factura de cliente, id del gasto de proveedor, email de la persona del reembolso o un tipo informativo (p. ej. gasto_tarjeta). Lo que dejes vacío queda pendiente en «Movimientos sin casar».</div>
+          <table><tbody>${rev.map((x) => `<tr><td>${x.n}</td><td>${esc(x.fecha)}</td><td>${esc(x.concepto)}</td><td class="n">${esc(nf.format(x.importe))}</td><td>${x.candidatas ? esc(x.candidatas.map((c) => c.factura ?? c.gasto).join(", ")) : ""}</td><td><input type="text" data-n="${x.n}"></td></tr>`).join("")}</tbody></table>` : "")
+        + `<p><button class="p" id="go" type="button">Registrar cobros, pagos, reembolsos y saldo</button></p>`;
+      sal.querySelector("#go").onclick = async () => {
+        const resolver = [];
+        sal.querySelectorAll("input[data-n]").forEach((i) => { const s = i.value.trim(); if (!s) return; const n = Number(i.dataset.n);
+          resolver.push(/^\d+$/.test(s) ? { n, gasto: Number(s) } : s.includes("@") ? { n, persona: s } : /^[a-z_]+$/.test(s) ? { n, tipo: s } : { n, factura: s }); });
+        try { sal.innerHTML = resultado(await ejecutar("cargar_extracto", Object.assign({}, args, { validar: false, resolver: resolver.length ? resolver : undefined }))); }
+        catch (e) { sal.innerHTML = error(e); }
+      };
+    } catch (e) { sal.innerHTML = error(e); }
+  };
+}
+
+// ---------------------------------------------------------------- rutas
+async function arrancar() {
+  try { const r = await llamar("/yo"); yo = r.yo; grupos = r.grupos; herramientas = r.herramientas; }
+  catch (e) { return salirLocal(token ? "La sesión ha caducado: vuelve a entrar" : ""); }
+  ruta();
+}
+function ruta() {
+  const h = location.hash.replace(/^#/, "");
+  let m;
+  if ((m = h.match(/^alta=([0-9a-f]{64})$/))) return pantallaAlta(m[1]);
+  if ((m = h.match(/^subir=([0-9a-f]{64})$/))) return pantallaSubir(m[1]);
+  if (!token) return pantallaLogin();
+  if (!yo) return arrancar();
+  if ((m = h.match(/^h=([a-z_]+)$/))) return pantallaHerramienta(m[1]);
+  if (h === "carga") return pantallaCarga();
+  if (h === "extracto") return pantallaExtracto();
+  return inicio();
+}
+window.addEventListener("hashchange", ruta);
+ruta();
+</script>
+</body>
+</html>
